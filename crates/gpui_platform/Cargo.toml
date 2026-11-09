@@ -13,7 +13,9 @@ path = "src/gpui_platform.rs"
 doctest = false
 
 [features]
-default = ["multithreaded"]
+default = ["multithreaded", "webgl"]
+# WebGL2 fallback on the web; off for a WebGPU-only build.
+webgl = ["gpui_web/webgl"]
 # Threads in the browser: needs a nightly toolchain and a cross-origin-isolated
 # page. Off, gpui_web builds on stable.
 multithreaded = ["gpui_web/multithreaded"]

@@ -1449,6 +1449,13 @@ pub trait StatefulInteractiveElement: InteractiveElement {
         self
     }
 
+    /// Mark this element (usually a dialog) as modal: while it is shown,
+    /// assistive technology treats content outside it as inert.
+    fn aria_modal(mut self) -> Self {
+        self.interactivity().aria.modal = true;
+        self
+    }
+
     /// Set the toggled state for this element.
     fn aria_toggled(mut self, toggled: accesskit::Toggled) -> Self {
         self.interactivity().aria.toggled = Some(toggled);
@@ -2160,6 +2167,7 @@ pub(crate) struct AriaProperties {
     pub(crate) keyshortcuts: Option<SharedString>,
     pub(crate) selected: Option<bool>,
     pub(crate) expanded: Option<bool>,
+    pub(crate) modal: bool,
     pub(crate) toggled: Option<accesskit::Toggled>,
     pub(crate) numeric_value: Option<f64>,
     pub(crate) min_numeric_value: Option<f64>,
@@ -3606,6 +3614,9 @@ impl Interactivity {
         }
         if let Some(expanded) = self.aria.expanded {
             node.set_expanded(expanded);
+        }
+        if self.aria.modal {
+            node.set_modal();
         }
         if let Some(toggled) = self.aria.toggled {
             node.set_toggled(toggled);

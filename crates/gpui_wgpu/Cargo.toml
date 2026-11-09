@@ -16,6 +16,10 @@ doctest = false
 default = []
 bench-support = ["gpui/bench-support", "dep:image"]
 font-kit = ["dep:font-kit"]
+# WebGL2 fallback for browsers without WebGPU. Pulls in wgpu's GL backend and
+# naga's GLSL translation, about a sixth of a web build; a WebGPU-only build
+# can turn it off.
+webgl = ["wgpu/webgl"]
 test-support = ["gpui/test-support", "dep:image"]
 
 [dependencies]
@@ -49,7 +53,6 @@ wgpu = { workspace = true, default-features = true }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 web-sys = { workspace = true, features = ["HtmlCanvasElement"] }
-wgpu = { workspace = true, features = ["webgl"] }
 
 [dev-dependencies]
 criterion.workspace = true

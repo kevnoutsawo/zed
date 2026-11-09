@@ -471,6 +471,7 @@ fn write_semantics(element: &web_sys::HtmlElement, node: &Node, had_children: bo
     set_attr(el, "aria-pressed", pressed);
     set_attr(el, "aria-selected", node.is_selected().map(bool_str));
     set_attr(el, "aria-expanded", node.is_expanded().map(bool_str));
+    set_attr(el, "aria-modal", node.is_modal().then_some("true"));
     set_attr(el, "aria-disabled", node.is_disabled().then_some("true"));
     set_attr(el, "aria-hidden", node.is_hidden().then_some("true"));
 

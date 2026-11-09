@@ -294,26 +294,31 @@ impl WebWindow {
             let dpr = inner.browser_window.device_pixel_ratio();
             let dpr_f32 = dpr as f32;
 
-            let (physical_width, physical_height, logical_width, logical_height) =
-                if inner.has_device_pixel_support {
-                    let size: web_sys::ResizeObserverSize = entry
-                        .device_pixel_content_box_size()
-                        .get(0)
-                        .unchecked_into();
-                    let pw = size.inline_size() as u32;
-                    let ph = size.block_size() as u32;
-                    let lw = pw as f64 / dpr;
-                    let lh = ph as f64 / dpr;
-                    (pw, ph, lw as f32, lh as f32)
-                } else {
-                    // Safari fallback: use contentRect (always CSS px).
-                    let rect = entry.content_rect();
-                    let lw = rect.width() as f32;
-                    let lh = rect.height() as f32;
-                    let pw = (lw as f64 * dpr).round() as u32;
-                    let ph = (lh as f64 * dpr).round() as u32;
-                    (pw, ph, lw, lh)
-                };
+            // Logical size always comes from contentRect (CSS px). The exact
+            // device-pixel size is used when available (no blur from
+            // rounding), but only if it agrees with contentRect * dpr: some
+            // device emulators report CSS px there while devicePixelRatio is
+            // 2, which would lay the app out at half width and draw it 2x.
+            let rect = entry.content_rect();
+            let (mut logical_width, mut logical_height) =
+                (rect.width() as f32, rect.height() as f32);
+            let (mut physical_width, mut physical_height) = (
+                (rect.width() * dpr).round() as u32,
+                (rect.height() * dpr).round() as u32,
+            );
+            if inner.has_device_pixel_support {
+                let size: web_sys::ResizeObserverSize = entry
+                    .device_pixel_content_box_size()
+                    .get(0)
+                    .unchecked_into();
+                let (pw, ph) = (size.inline_size() as u32, size.block_size() as u32);
+                let close = |a: u32, b: u32| a.abs_diff(b) as f64 <= dpr.ceil() + 1.0;
+                if close(pw, physical_width) && close(ph, physical_height) {
+                    (physical_width, physical_height) = (pw, ph);
+                    (logical_width, logical_height) =
+                        ((pw as f64 / dpr) as f32, (ph as f64 / dpr) as f32);
+                }
+            }
 
             let scale_changed = inner.notify_scale.replace(false);
             let prev = inner.last_physical_size.get();
