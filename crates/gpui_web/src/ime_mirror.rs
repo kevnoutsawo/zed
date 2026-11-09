@@ -208,6 +208,27 @@ impl ImeMirror {
         self.element.blur().ok();
     }
 
+    pub(crate) fn is_element(&self, other: &web_sys::Element) -> bool {
+        let element: &web_sys::Element = self.element.as_ref();
+        element == other
+    }
+
+    /// Gives the textarea the accessible name of the GPUI text field it is
+    /// standing in for, so screen readers announce "New task, edit text"
+    /// rather than an anonymous field. Written only on change: mutating the
+    /// focused element can restart the IME's input connection.
+    pub(crate) fn describe(&self, node: &gpui::accesskit::Node) {
+        let element: &web_sys::Element = self.element.as_ref();
+        let label = node.label().or(node.placeholder()).unwrap_or("Text input");
+        if element.get_attribute("aria-label").as_deref() != Some(label) {
+            element.set_attribute("aria-label", label).ok();
+        }
+        match node.description() {
+            Some(description) => element.set_attribute("aria-description", description).ok(),
+            None => element.remove_attribute("aria-description").ok(),
+        };
+    }
+
     pub(crate) fn virtual_keyboard_enabled(&self) -> bool {
         self.element.get_attribute("inputmode").as_deref() != Some("none")
     }

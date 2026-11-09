@@ -1,3 +1,4 @@
+use crate::a11y::WebA11y;
 use crate::display::WebDisplay;
 use crate::events::{
     ClickState, EventListenerHandle, TouchIds, WebEventListeners, is_mac_platform,
@@ -84,6 +85,8 @@ pub(crate) struct WebWindowInner {
     /// pans must leave them untouched, or scrolling over editable content
     /// flickers the keyboard and drags the caret around.
     pub(crate) touch_tap_candidate: Cell<Option<(i32, Point<Pixels>)>>,
+    /// The DOM mirror of GPUI's accessibility tree, once GPUI enables it.
+    pub(crate) a11y: RefCell<Option<WebA11y>>,
     mql_handle: RefCell<Option<MqlHandle>>,
     pending_physical_size: Cell<Option<(u32, u32)>>,
     raf_id: Cell<Option<i32>>,
@@ -224,6 +227,7 @@ impl WebWindow {
             suppress_focus_status_events: Cell::new(false),
             gesture_start_visual_viewport_height: Cell::new(0.0),
             touch_tap_candidate: Cell::new(None),
+            a11y: RefCell::new(None),
             mql_handle: RefCell::new(None),
             pending_physical_size: Cell::new(None),
             raf_id: Cell::new(None),
@@ -627,6 +631,9 @@ impl Drop for WebWindow {
         let canvas: &web_sys::Element = self.inner.canvas.as_ref();
         canvas.remove();
         self.inner.ime_mirror.remove();
+        if let Some(a11y) = self.inner.a11y.borrow_mut().take() {
+            a11y.remove();
+        }
         self.active_window.borrow_mut().take();
         self.lifecycle.set(WebWindowLifecycle::Closed);
     }
@@ -1026,6 +1033,27 @@ impl PlatformWindow for WebWindow {
     }
 
     fn update_ime_position(&self, _bounds: Bounds<Pixels>) {}
+
+    fn a11y_init(&self, callbacks: gpui::A11yCallbacks) {
+        match WebA11y::new(&self.inner, callbacks) {
+            Ok(mut a11y) => {
+                a11y.activate(&self.inner);
+                *self.inner.a11y.borrow_mut() = Some(a11y);
+            }
+            Err(error) => log::error!("failed to set up the accessibility mirror: {error:#}"),
+        }
+    }
+
+    fn a11y_tree_update(&self, tree_update: gpui::accesskit::TreeUpdate) {
+        if let Ok(mut a11y) = self.inner.a11y.try_borrow_mut()
+            && let Some(a11y) = a11y.as_mut()
+        {
+            a11y.update(&self.inner, tree_update);
+        }
+    }
+
+    // The mirror re-reads the canvas position on every tree update.
+    fn a11y_update_window_bounds(&self) {}
 
     fn request_decorations(&self, _decorations: WindowDecorations) {}
 

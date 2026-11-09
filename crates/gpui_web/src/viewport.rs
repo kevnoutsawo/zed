@@ -113,14 +113,11 @@ fn safe_area_probe(
         .map_err(|error| anyhow::anyhow!("Failed to create safe-area probe: {error:?}"))?
         .dyn_into::<web_sys::HtmlElement>()
         .map_err(|error| anyhow::anyhow!("Invalid safe-area probe element: {error:?}"))?;
-    probe
-        .set_attribute(
-            "style",
-            &format!(
-                "position:fixed;left:0;top:0;width:0;padding:0;border:0;visibility:hidden;\
-                 pointer-events:none;height:env(safe-area-inset-{edge},0px)"
-            ),
-        )
-        .map_err(|error| anyhow::anyhow!("Failed to style safe-area probe: {error:?}"))?;
+    // Through the CSSOM, not a `style` attribute: a Content-Security-Policy
+    // without 'unsafe-inline' blocks style attributes but allows this.
+    probe.style().set_css_text(&format!(
+        "position:fixed;left:0;top:0;width:0;padding:0;border:0;visibility:hidden;\
+         pointer-events:none;height:env(safe-area-inset-{edge},0px)"
+    ));
     Ok(probe)
 }

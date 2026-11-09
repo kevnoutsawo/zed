@@ -73,7 +73,6 @@ mod prompts;
 pub use a11y::A11ySubtreeBuilder;
 
 use self::a11y::A11y;
-#[cfg(not(target_family = "wasm"))]
 use self::a11y::ROOT_NODE_ID;
 use crate::util::{
     atomic_incr_if_not_zero, ceil_to_device_pixel, floor_to_device_pixel, round_half_toward_zero,
@@ -1735,7 +1734,6 @@ impl Window {
         let accessibility_force_disabled = cx.accessibility_force_disabled;
         let a11y_active_flag = Arc::new(AtomicBool::new(false));
 
-        #[cfg(not(target_family = "wasm"))]
         if !accessibility_force_disabled {
             let mut initial_root_node = accesskit::Node::new(accesskit::Role::Window);
             if let Some(title) = &initial_window_title {
@@ -1747,6 +1745,9 @@ impl Window {
                 tree_id: accesskit::TreeId::ROOT,
                 focus: ROOT_NODE_ID,
             };
+            // Unbounded channels, so `try_send` only fails once the receiver is
+            // gone. Unlike `send_blocking` it also exists on wasm, where the
+            // browser adapter calls these callbacks from DOM event handlers.
             let (activation_sender, activation_receiver) = async_channel::unbounded::<()>();
             let (deactivation_sender, deactivation_receiver) = async_channel::unbounded::<()>();
             let (action_sender, action_receiver) =
@@ -1758,43 +1759,34 @@ impl Window {
                     Box::new(move || {
                         log::info!("Accessibility activated");
                         active_flag.store(true, SeqCst);
-                        activation_sender
-                            .send_blocking(())
-                            .with_context(|| {
-                                format!(
-                                    "queuing accessibility activation for window {:?}",
-                                    handle.window_id()
-                                )
-                            })
-                            .log_err();
+                        if activation_sender.try_send(()).is_err() {
+                            log::error!(
+                                "queuing accessibility activation for window {:?}: receiver dropped",
+                                handle.window_id()
+                            );
+                        }
                         Some(initial_tree.clone())
                     })
                 },
                 action: Box::new(move |request| {
-                    action_sender
-                        .send_blocking(request)
-                        .with_context(|| {
-                            format!(
-                                "queuing accessibility action for window {:?}",
-                                handle.window_id()
-                            )
-                        })
-                        .log_err();
+                    if action_sender.try_send(request).is_err() {
+                        log::error!(
+                            "queuing accessibility action for window {:?}: receiver dropped",
+                            handle.window_id()
+                        );
+                    }
                 }),
                 deactivation: {
                     let active_flag = a11y_active_flag.clone();
                     Box::new(move || {
                         log::info!("Accessibility deactivated");
                         active_flag.store(false, SeqCst);
-                        deactivation_sender
-                            .send_blocking(())
-                            .with_context(|| {
-                                format!(
-                                    "queuing accessibility deactivation for window {:?}",
-                                    handle.window_id()
-                                )
-                            })
-                            .log_err();
+                        if deactivation_sender.try_send(()).is_err() {
+                            log::error!(
+                                "queuing accessibility deactivation for window {:?}: receiver dropped",
+                                handle.window_id()
+                            );
+                        }
                     })
                 },
             });
@@ -7322,7 +7314,6 @@ impl Window {
             .push((action, Box::new(listener)));
     }
 
-    #[cfg(not(target_family = "wasm"))]
     pub(crate) fn handle_a11y_action(&mut self, request: accesskit::ActionRequest, cx: &mut App) {
         // Take listeners out temporarily so the closures can borrow Window
         // mutably, then restore them afterward.

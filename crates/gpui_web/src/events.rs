@@ -703,118 +703,126 @@ impl WebWindowInner {
     fn register_key_down(self: &Rc<Self>) -> EventListenerHandle {
         let this = Rc::clone(self);
         self.listen_input("keydown", move |event: JsValue| {
-            let event: web_sys::KeyboardEvent = event.unchecked_into();
-
-            let modifiers = modifiers_from_keyboard_event(&event, this.is_mac);
-            let capslock = capslock_from_keyboard_event(&event);
-
-            if this.update_modifiers(modifiers, capslock) {
-                this.dispatch_input(PlatformInput::ModifiersChanged(ModifiersChangedEvent {
-                    modifiers,
-                    capslock,
-                }));
-            }
-
-            let key = dom_key_to_gpui_key(&event);
-
-            if is_modifier_only_key(&key) {
-                return;
-            }
-
-            let is_held = event.repeat();
-            let key_char = compute_key_char(&event, &key, &modifiers);
-
-            // The software keyboard must edit the mirror itself: cancelling
-            // keydown prevents iOS from updating its autocorrect context and
-            // from delivering the corresponding beforeinput/input events.
-            if this.touch_input
-                && this.ime_mirror.virtual_keyboard_enabled()
-                && this.state.borrow().input_handler.is_some()
-                && !modifiers.platform
-                && !modifiers.control
-                && !modifiers.alt
-                && (key_char.is_some() || matches!(key.as_str(), "backspace" | "delete" | "enter"))
-            {
-                return;
-            }
-
-            let keystroke = Keystroke {
-                modifiers,
-                key,
-                key_char: key_char.clone(),
-            };
-
-            let result = this.dispatch_input(PlatformInput::KeyDown(KeyDownEvent {
-                keystroke,
-                is_held,
-                prefer_character_input: false,
-            }));
-
-            if let Some(result) = result {
-                if !result.propagate {
-                    event.prevent_default();
-                    this.schedule_ime_mirror_sync();
-                    return;
-                }
-            }
-
-            if this.is_composing.get() || event.is_composing() {
-                event.prevent_default();
-                return;
-            }
-
-            if keystroke_inserts_text(&modifiers, this.is_mac)
-                && let Some(text) = key_char
-            {
-                this.with_input_handler(|handler| {
-                    handler.replace_text_in_range(None, &text);
-                });
-                // The character went into the input handler; suppress browser
-                // side-effects for the same keystroke (space scrolling the
-                // page, quick-find, etc.). Everything not handled above falls
-                // through so browser shortcuts keep their defaults.
-                event.prevent_default();
-            }
-            this.schedule_ime_mirror_sync();
+            this.handle_key_down(event.unchecked_into())
         })
+    }
+
+    /// Shared by the IME textarea and the accessibility mirror, which holds
+    /// DOM focus while keyboard navigation is on a non-text control.
+    pub(crate) fn handle_key_down(self: &Rc<Self>, event: web_sys::KeyboardEvent) {
+        let this = self;
+        let modifiers = modifiers_from_keyboard_event(&event, this.is_mac);
+        let capslock = capslock_from_keyboard_event(&event);
+
+        if this.update_modifiers(modifiers, capslock) {
+            this.dispatch_input(PlatformInput::ModifiersChanged(ModifiersChangedEvent {
+                modifiers,
+                capslock,
+            }));
+        }
+
+        let key = dom_key_to_gpui_key(&event);
+
+        if is_modifier_only_key(&key) {
+            return;
+        }
+
+        let is_held = event.repeat();
+        let key_char = compute_key_char(&event, &key, &modifiers);
+
+        // The software keyboard must edit the mirror itself: cancelling
+        // keydown prevents iOS from updating its autocorrect context and
+        // from delivering the corresponding beforeinput/input events.
+        if this.touch_input
+            && this.ime_mirror.virtual_keyboard_enabled()
+            && this.state.borrow().input_handler.is_some()
+            && !modifiers.platform
+            && !modifiers.control
+            && !modifiers.alt
+            && (key_char.is_some() || matches!(key.as_str(), "backspace" | "delete" | "enter"))
+        {
+            return;
+        }
+
+        let keystroke = Keystroke {
+            modifiers,
+            key,
+            key_char: key_char.clone(),
+        };
+
+        let result = this.dispatch_input(PlatformInput::KeyDown(KeyDownEvent {
+            keystroke,
+            is_held,
+            prefer_character_input: false,
+        }));
+
+        if let Some(result) = result {
+            if !result.propagate {
+                event.prevent_default();
+                this.schedule_ime_mirror_sync();
+                return;
+            }
+        }
+
+        if this.is_composing.get() || event.is_composing() {
+            event.prevent_default();
+            return;
+        }
+
+        if keystroke_inserts_text(&modifiers, this.is_mac)
+            && let Some(text) = key_char
+        {
+            this.with_input_handler(|handler| {
+                handler.replace_text_in_range(None, &text);
+            });
+            // The character went into the input handler; suppress browser
+            // side-effects for the same keystroke (space scrolling the
+            // page, quick-find, etc.). Everything not handled above falls
+            // through so browser shortcuts keep their defaults.
+            event.prevent_default();
+        }
+        this.schedule_ime_mirror_sync();
     }
 
     fn register_key_up(self: &Rc<Self>) -> EventListenerHandle {
         let this = Rc::clone(self);
         self.listen_input("keyup", move |event: JsValue| {
-            let event: web_sys::KeyboardEvent = event.unchecked_into();
-
-            let modifiers = modifiers_from_keyboard_event(&event, this.is_mac);
-            let capslock = capslock_from_keyboard_event(&event);
-
-            if this.update_modifiers(modifiers, capslock) {
-                this.dispatch_input(PlatformInput::ModifiersChanged(ModifiersChangedEvent {
-                    modifiers,
-                    capslock,
-                }));
-            }
-
-            let key = dom_key_to_gpui_key(&event);
-
-            if is_modifier_only_key(&key) {
-                return;
-            }
-
-            let key_char = compute_key_char(&event, &key, &modifiers);
-
-            let keystroke = Keystroke {
-                modifiers,
-                key,
-                key_char,
-            };
-
-            let result = this.dispatch_input(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
-            if let Some(result) = result {
-                if !result.propagate {
-                    event.prevent_default();
-                }
-            }
+            this.handle_key_up(event.unchecked_into())
         })
+    }
+
+    pub(crate) fn handle_key_up(self: &Rc<Self>, event: web_sys::KeyboardEvent) {
+        let this = self;
+        let modifiers = modifiers_from_keyboard_event(&event, this.is_mac);
+        let capslock = capslock_from_keyboard_event(&event);
+
+        if this.update_modifiers(modifiers, capslock) {
+            this.dispatch_input(PlatformInput::ModifiersChanged(ModifiersChangedEvent {
+                modifiers,
+                capslock,
+            }));
+        }
+
+        let key = dom_key_to_gpui_key(&event);
+
+        if is_modifier_only_key(&key) {
+            return;
+        }
+
+        let key_char = compute_key_char(&event, &key, &modifiers);
+
+        let keystroke = Keystroke {
+            modifiers,
+            key,
+            key_char,
+        };
+
+        let result = this.dispatch_input(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
+        if let Some(result) = result {
+            if !result.propagate {
+                event.prevent_default();
+            }
+        }
     }
 
     /// Imports IME edits from the hidden input into the app.
